@@ -19,7 +19,7 @@ fn other_dbpy(_py: Python, m: &PyModule) -> PyResult<()> {
 
 #[pyfunction]
 fn open_db(path:String) -> PyKvDbOperaObject{
-    PyKvDbOperaObject{ db : Arc::from(kv_operation::KvDbOpera::new(Arc::from(kv_operation::initialization(path)))) }
+    PyKvDbOperaObject{ db : kv_operation::KvDbOpera::new(kv_operation::initialization(path)) }
 }
 
 #[derive(Clone)]

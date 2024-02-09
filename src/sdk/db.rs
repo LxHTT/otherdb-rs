@@ -3,20 +3,23 @@ fn ivec_to_string(v:sled::IVec) -> String{
 }
 
 pub mod kv_operation {
-    use std::sync::Arc;
     use sled::{Db, IVec};
 
     pub fn initialization(path:String) -> Db{
+        // 创建一个储存引擎对象
         sled::open(path).expect("Failed to open database")
     }
+
+    #[derive(Clone)]
     pub struct KvDbOpera {
-        db : Arc<Db>
+        // 键值对操作对象
+        db : Db
     }
 
-    pub type KvDbOperaObject = Arc<KvDbOpera>;
+    pub type KvDbOperaObject = KvDbOpera; // 创建类型(方便读)
 
     impl KvDbOpera {
-        pub(crate) fn new(db: Arc<Db>) -> Self {
+        pub(crate) fn new(db: Db) -> Self {
             KvDbOpera { db }
         }
         pub(crate) fn insert<T: AsRef<[u8]>,V:Into<IVec>>(&self, key: T, value: V) -> Result<bool, String> {
@@ -40,7 +43,7 @@ pub mod kv_operation {
     }
     #[test]
     fn test1(){
-        let a = KvDbOpera::new(Arc::from(initialization("/tmp/welcome-to-sled".to_string())));
+        let a = KvDbOpera::new(initialization("/tmp/welcome-to-sled".to_string()));
         dbg!(&a.insert(&[1,3,5,7,9], &[1,1,4,5,1,4]).expect("")) ;
         dbg!(&a.get(&[1,3,5,7,9]));
         dbg!(&a.delete(&[1, 3, 5, 7, 9]));
@@ -52,6 +55,7 @@ pub mod kv_operation {
 
 pub mod data_conversion {
     pub fn bitwise_division(dividend: u32, divisor: u32) -> (u32, u32) {
+        // 位运算除法
         let mut quotient = 0;
         let mut remainder = dividend;
 
@@ -66,6 +70,7 @@ pub mod data_conversion {
     }
 
     pub fn section_to_int(section: &[u8]) -> u128 {
+        // 切片转整数
         let mut b: u128 = 0;
         for i in section {
             b += *i as u128;
@@ -74,6 +79,7 @@ pub mod data_conversion {
     }
 
     pub fn int_to_vec(int: u32, vec: &mut Vec<u8>) {
+        // 整数转向量
         let (quotient, remainder) = bitwise_division(int, 255);
         for _ in 0..quotient {
             vec.push(255);
@@ -92,11 +98,11 @@ pub mod data_conversion {
 
 
 pub mod list_db {
-    use std::sync::Arc;
     use sled::IVec;
-    use crate::sdk::db::kv_operation::{KvDbOperaObject};
+    use crate::sdk::db::kv_operation::{initialization, KvDbOpera, KvDbOperaObject};
 
     pub struct ListDb {
+        // 数据库列表对象
         db: KvDbOperaObject,
         pub(crate) name: String,
     }
@@ -139,7 +145,7 @@ pub mod list_db {
                 None => {
                     match db.insert(&key,&*(0.to_string())) {
                         Ok(_) => Ok(ListDb {db,name}), // 返回正确的对象
-                        Err(e) => match db.delete(&key) { // 创建列表失败
+                        Err(e) => match db.delete(&key) { // 创建列表失败,开始收拾残局(也就是删掉创建到一半的列表)
                             Ok(_) => Err(e),
                             Err(e1) => Err(format!("{},{}",e,e1)) // 收拾残局失败
                         }
@@ -148,19 +154,21 @@ pub mod list_db {
             }
         }
         pub(crate) fn append(&self, value: Vec<u8>) -> Result<bool,String> {
-            let index = match self.length() {
+            // 追加
+            let index = match self.length() { // 获取原来列表长度
                 None => { return Err("Failed to obtain List length".to_string()) }
                 Some(l) => l
             };
-            match self.change_length(index+1) {
-                Ok(_) => self.overwrite(index, value),
+            match self.change_length(index+1) { // 先给列表长度加一,这是为了通过覆写的列表长度检查
+                Ok(_) => self.overwrite(index, value), // 覆写新index对应的数据
                 Err(e) => Err(e),
             }
         }
         pub(crate) fn access(&self, index: usize) -> Option<Vec<u8>> {
+            // 访问数据
             match self.db.get(self.get_key(index)) {
                 Ok(v) => match v {
-                    Some(t) => Some(t.to_vec()),
+                    Some(t) => Some(t.to_vec()), // 把IVec转化为常用的Vec
                     _ => None
                 },
                 _ => None
@@ -168,16 +176,17 @@ pub mod list_db {
         }
 
         pub(crate) fn overwrite(&self, index: usize, value: Vec<u8>) -> Result<bool,String> {
-            if self.length().unwrap() >= index + 1 {
-                match self.db.insert(self.get_key(index), IVec::from(value)) {
+            // 覆写数据
+            if self.length().unwrap() >= index + 1 { // 检查index是否超过列表长度
+                match self.db.insert(self.get_key(index), IVec::from(value)) { // 调用数据库执行写入
                     Ok(_) => Ok(true),
-                    Err(e) => match self.delete(index) {
-                        Ok(_) => Err(e), // 收拾残局
-                        Err(e1) => Err(format!("{e},{e1}"))
+                    Err(e) => match self.delete(index) { // 覆写失败,收拾残局
+                        Ok(_) => Err(e),
+                        Err(e1) => Err(format!("{e},{e1}")) // 收拾残局失败,没救了
                     },
                 }
             } else {
-                Err("Index too large".to_string())
+                Err("Index too large".to_string()) // index超过了列表长度,不符合列表元素覆写规则
             }
 
         }
@@ -210,7 +219,7 @@ pub mod list_db {
     #[test]
     fn list_test_string(){
         let a = ListDb::new(
-            Arc::new(crate::sdk::db::kv_operation::KvDbOpera::new(Arc::from(crate::sdk::db::kv_operation::initialization("/tmp/welcome-to-sled".to_string())))),
+            KvDbOpera::new(initialization("/tmp/welcome-to-sled".to_string())),
             "113314".to_string()
         ).expect("");
         // dbg!(&a.append(&"很可爱?".to_string()));
@@ -236,9 +245,8 @@ pub mod list_db {
 }
 
 pub mod tuple_list_db {
-    use std::sync::Arc;
     use crate::sdk::db::list_db as list;
-    use crate::sdk::db::kv_operation::KvDbOperaObject;
+    use crate::sdk::db::kv_operation::{initialization, KvDbOperaObject};
 
     pub struct TupleList {
         list : list::ListDb,
@@ -247,7 +255,9 @@ pub mod tuple_list_db {
     }
 
     impl  TupleList {
-
+        // 元组列表的思想是利用列表来储存固定长度的元组
+        // 也就是类似于: 元组列表([(1,2),(3,4)]),实际列表([1,2,3,4])
+        // 因此元组列表的实际列表的长度有 2*元组列表长度 的关系
         pub(crate) fn new(db: KvDbOperaObject, name: String, len: u16) -> Result<Self, String> {
             match list::ListDb::new(db,format!("Tuple:{name}")) { // 构建列表
                 Ok(list) => Ok(TupleList { list,name, len}),
@@ -255,32 +265,23 @@ pub mod tuple_list_db {
             }
         }
 
-
         pub(crate) fn append(&self, value: &Vec<Vec<u8>>) -> Result<bool, String> {
-            // 元组列表的思想是利用列表来储存固定长度的元组
-            // let list_len = self.List.length().unwrap();
-            // if value.len() != (self.len as usize)  { return Err("Value length error".to_string()) } // 输入长度错误
-            // for i in value {
-            //     match self.List.append(i) {
-            //         Ok(_) => {},
-            //         Err(e) => {
-            //             for j in list_len..self.len{ // 收拾残局
-            //                 if let _ = &self.List.delete(j){ todo!() };
-            //             }return Err(e); // 输出错误
-            //         }
-            //     }
-            // }
-            // Ok(true)
+            // 追加元组元素
             self.list.change_length(self.list.length().unwrap() + value.len()).unwrap();
             self.overwrite(self.length().unwrap()-1,value)
         }
 
-        pub(crate) fn access(&self, index: usize) -> Vec<Option<Vec<u8>>> {
+        pub(crate) fn access(&self, index: usize) -> Option<Vec<Option<Vec<u8>>>> {
+            // 访问,如果返回结果为 [] ,则就等于没有
             let mut ret:Vec<Option<Vec<u8>>> = vec![];
             for i in index*(self.len as usize)..(index*(self.len as usize))+self.len as usize{
                 ret.push(self.list.access(i));
             }
-            ret
+            return if ret == vec![] {
+                None
+            } else {
+                Option::from(ret)
+            }
         }
 
         pub(crate) fn overwrite(&self, index: usize, value: &Vec<Vec<u8>>) -> Result<bool, String> {
@@ -291,7 +292,7 @@ pub mod tuple_list_db {
                     Ok(_) => {  },
                     Err(e) => {
                         for j in (index*(self.len as usize))..(index*(self.len as usize))+i{ // 收拾残局(注意当前覆写的残局已被 self.List.overwrite 收拾干净了,所以不需要再收拾一遍了)
-                            if let _ = &self.list.delete(j){  };
+                            let _ = &self.list.delete(j);
                         }return Err(e); // 输出错误
                     }
                 }
@@ -301,7 +302,7 @@ pub mod tuple_list_db {
 
         pub(crate) fn delete(&self, index: usize){
             for j in (index*(self.len as usize))..(index*(self.len as usize))+(self.len as usize) { // 收拾残局(注意当前覆写的残局已被 self.List.overwrite 收拾干净了,所以不需要再收拾一遍了)
-                if let _ = &self.list.delete(j) {  };
+                let _ = &self.list.delete(j);
             }
         }
 
@@ -326,13 +327,7 @@ pub mod tuple_list_db {
     #[test]
     fn test(){
         let a = TupleList::new(
-            KvDbOperaObject::from(crate::sdk::db::kv_operation::KvDbOpera::new(
-                Arc::from(
-                    crate::sdk::db::kv_operation::initialization(
-                        "/tmp/welcome-to-sled".to_string()
-                    )
-                )
-            )), "156745qxxs23".to_string(), 2).unwrap();
+            KvDbOperaObject::new(initialization("/tmp/welcome-to-sled".to_string())), "156745qxxs23".to_string(), 2).unwrap();
         dbg!(a.length().unwrap());
         dbg!(&a.append(&vec!["I love".to_string().as_bytes().to_vec(), "XXXXXXXXXXXX".to_string().as_bytes().to_vec()]));
         dbg!(a.length().unwrap());
@@ -349,13 +344,12 @@ pub mod tuple_list_db {
 }
 
 pub mod hashtable_sled_db {
-    use std::sync::Arc;
     // 储存键列表 + 基于sled的哈希表
-    use crate::sdk::db::kv_operation as db_opera;
+    use crate::sdk::db::kv_operation::{initialization, KvDbOperaObject};
     use crate::sdk::db::list_db::ListDb;
 
     struct OriginalHashtable { // 原始hash表,只有键值对
-        db : db_opera::KvDbOperaObject,
+        db : KvDbOperaObject,
         name : String,
     }
 
@@ -365,7 +359,7 @@ pub mod hashtable_sled_db {
     }
 
     impl OriginalHashtable {
-        fn new(db:db_opera::KvDbOperaObject , name : String) -> Self {
+        fn new(db:KvDbOperaObject , name : String) -> Self {
             OriginalHashtable { db,name }
         }
 
@@ -384,7 +378,7 @@ pub mod hashtable_sled_db {
         }
 
         fn delete(&self,key:&String) {
-            if let _ = self.db.delete(self.get_key(key)) {}
+            let _ = self.db.delete(self.get_key(key));
         }
 
         fn get_key(&self,key:&String) -> String {
@@ -424,7 +418,7 @@ pub mod hashtable_sled_db {
 
     #[test]
     fn test_original_hashtable () {
-        let a = OriginalHashtable::new(Arc::new(crate::sdk::db::kv_operation::KvDbOpera::new(Arc::from(crate::sdk::db::kv_operation::initialization("/tmp/welcome-to-sled".to_string())))),"823789792".to_string());
+        let a = OriginalHashtable::new(KvDbOperaObject::new(initialization("/tmp/welcome-to-sled".to_string())),"823789792".to_string());
         dbg!(&a.insert(&"heheh".to_string(), vec![1, 1, 4, 5, 1, 4]));
         dbg!(&a.get(&"heheh".to_string()));
         dbg!(&a.delete(&"heheh".to_string()));
@@ -436,10 +430,9 @@ pub mod hashtable_sled_db {
 pub mod hashtable_zipper_db {
     // 拉链法哈希表
     use crate::sdk::db::list_db::ListDb;
-    use crate::sdk::db::kv_operation::KvDbOperaObject;
+    use crate::sdk::db::kv_operation::{initialization, KvDbOperaObject};
     use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
-    use std::sync::Arc;
     use crate::sdk::db::tuple_list_db::TupleList;
 
     pub struct Hashtable {
@@ -454,11 +447,11 @@ pub mod hashtable_zipper_db {
         pub fn insert(&self,key:&String,value:Vec<u8>) -> Result<bool,String> {
             let hash_value = self.get_hash(key);
             return match self.hashlist.access(hash_value) {
-                Some(lzipName) => { // 此情况为hash碰撞的情况
-                    let lzip = self.new_lzip(lzipName);
+                Some(lzip_name) => { // 此情况为hash碰撞的情况
+                    let lzip = self.new_lzip(lzip_name);
                     // 此元组列表为 [(key,value)]
                     for i in 0..lzip.length().unwrap() {
-                        if &String::from_utf8(lzip.access(i)[0].clone().unwrap()).unwrap() == key {
+                        if &String::from_utf8(lzip.access(i).unwrap()[0].clone().unwrap()).unwrap() == key {
                             return lzip.overwrite(i, &vec![key.as_bytes().to_vec(), value])
                         }
                     } // 判断有没有已经存在的键,如果存在,就直接改
@@ -477,13 +470,13 @@ pub mod hashtable_zipper_db {
         }
         pub fn get(&self,key:&String) -> Option<Vec<u8>> {
             let hash_value = self.get_hash(key);
-            return match self.hashlist.access(hash_value as usize) {
-                Some(lzipName) => {
-                    let lzip = self.new_lzip(lzipName);
+            return match self.hashlist.access(hash_value) {
+                Some(lzip_name) => {
+                    let lzip = self.new_lzip(lzip_name);
                     // 此元组列表为 [(key,value)]
                     for i in 0..lzip.length().unwrap() { // 处理可能的哈希碰撞
-                        if &String::from_utf8(lzip.access(i)[0].clone().unwrap()).unwrap() == key {
-                            return Some(lzip.access(i)[1].clone().unwrap().clone()) // 提取出value
+                        if &String::from_utf8(lzip.access(i).unwrap()[0].clone().unwrap()).unwrap() == key {
+                            return Some(lzip.access(i).unwrap()[1].clone().unwrap().clone()) // 提取出value
                         }
                     } // 判断有没有已经存在的键
                     None
@@ -495,12 +488,12 @@ pub mod hashtable_zipper_db {
 
         pub fn delete(&self,key:&String) -> Result<bool,String> {
             let hash_value = self.get_hash(key);
-            return match self.hashlist.access(hash_value as usize) {
-                Some(lzipName) => {
-                    let lzip = self.new_lzip(lzipName);
+            return match self.hashlist.access(hash_value) {
+                Some(lzip_name) => {
+                    let lzip = self.new_lzip(lzip_name);
                     // 此元组列表为 [(key,value)]
                     for i in 0..lzip.length().unwrap() { // 处理可能的哈希碰撞
-                        if &String::from_utf8(lzip.access(i)[0].clone().unwrap()).unwrap() == key {
+                        if &String::from_utf8(lzip.access(i).unwrap()[0].clone().unwrap()).unwrap() == key {
                             lzip.delete(i);
                             return Ok(true)
                         }
@@ -511,17 +504,19 @@ pub mod hashtable_zipper_db {
             }
         }
         pub fn to_tuple_list(&self, number_of_entries:Option<usize>) -> Vec<(String, Vec<u8>)> {
-            // 时间复杂度极高,慎用!这也是把哈希表所有内容提取出来的方法之一
+            // 时间复杂度极高,慎用!这是把哈希表所有内容提取出来的方法之一
+            // 算法过程 : 迭代散列的所有元素,也就是迭代 self.hashlist,将其中的元组列表的数据挨个提取出来
+            // number_of_entries 为条目数量
             let mut ret = vec![];
             match number_of_entries {
                 Some(t) => {
                     let mut number_of_entries_i = 0usize;
                     for i in 0..self.hashlist.length().unwrap() {
                         match self.hashlist.access(i) {
-                            Some(lzipName) => {
-                                let lzip = self.new_lzip(lzipName);
+                            Some(lzip_name) => {
+                                let lzip = self.new_lzip(lzip_name);
                                 for i in 0..lzip.length().unwrap(){
-                                    let value = lzip.access(i);
+                                    let value = lzip.access(i).unwrap();
                                     ret.push((String::from_utf8(value[0].clone().unwrap().clone()).unwrap(),value[1].clone().unwrap().clone()));
                                     if number_of_entries_i >= t {
                                         return ret
@@ -537,10 +532,10 @@ pub mod hashtable_zipper_db {
                 None => {
                     for i in 0..self.hashlist.length().unwrap() {
                         match self.hashlist.access(i) {
-                            Some(lzipName) => {
-                                let lzip = self.new_lzip(lzipName);
+                            Some(lzip_name) => {
+                                let lzip = self.new_lzip(lzip_name);
                                 for i in 0..lzip.length().unwrap(){
-                                    let value = lzip.access(i);
+                                    let value = lzip.access(i).unwrap();
                                     ret.push((String::from_utf8(value[0].clone().unwrap().clone()).unwrap(),value[1].clone().unwrap().clone()));
                                 }
                             },
@@ -566,12 +561,7 @@ pub mod hashtable_zipper_db {
 
     #[test]
     fn test_hashtable(){
-        let a = Hashtable::new(KvDbOperaObject::from(crate::sdk::db::kv_operation::KvDbOpera::new(
-            Arc::from(
-                crate::sdk::db::kv_operation::initialization(
-                    "/tmp/welcome-to-sled".to_string()
-                )
-            ))),"1]&_+3)_~*-1)4".to_string());
+        let a = Hashtable::new(KvDbOperaObject::new(initialization("/tmp/welcome-to-sled".to_string())),"1]&_+3)_~*-1)4".to_string());
         dbg!(&a.insert(&"lst".to_string(), vec![1, 5, 2]));
         dbg!(&a.get(&"lst".to_string()));
         dbg!(&a.insert(&"I li".to_string(), vec![1, 1, 4, 5, 1, 4]));
