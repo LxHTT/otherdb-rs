@@ -4,12 +4,12 @@ mod sdk;
 use sdk::db::kv_operation;
 use crate::sdk::db::list_db::ListDb;
 use sdk::db::hashtable_zipper_db::Hashtable as HashtableDb;
+use crate::sdk::db::kv_operation::KvDbOperaTrait;
 
 /// A Python module implemented in Rust.
 #[pymodule]
 fn other_dbpy(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(open_db, m)?)?;
-    // m.add_function(wrap_pyfunction!(initialization_db,m)?)?;
     m.add_class::<PyKvDbOperaObject>()?;
     m.add_class::<List>()?;
     m.add_class::<Hashtable>()?;

@@ -18,29 +18,40 @@ pub mod kv_operation {
 
     pub type KvDbOperaObject = KvDbOpera; // 创建类型(方便读)
 
-    impl KvDbOpera {
-        pub(crate) fn new(db: Db) -> Self {
+    pub trait KvDbOperaTrait {
+        type Output;
+        fn new(db: Db) -> <Self as KvDbOperaTrait>::Output;
+        fn insert<T: AsRef<[u8]>,V:Into<IVec>>(&self, key: T, value: V) -> Result<bool, String>;
+        fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<IVec>, String>;
+        fn delete<T: AsRef<[u8]>>(&self, key: T) -> Result<bool, String>;
+    }
+
+    impl KvDbOperaTrait for KvDbOpera {
+        type Output = (Self);
+        fn new(db: Db) -> <KvDbOpera as KvDbOperaTrait>::Output {
             KvDbOpera { db }
         }
-        pub(crate) fn insert<T: AsRef<[u8]>,V:Into<IVec>>(&self, key: T, value: V) -> Result<bool, String> {
+        fn insert<T: AsRef<[u8]>,V:Into<IVec>>(&self, key: T, value: V) -> Result<bool, String> {
             match self.db.insert(key, value) {
                 Ok(_) => Ok(true),
                 Err(e) => Err(format!("{:?}", e)),
             }
         }
-        pub(crate) fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<IVec>, String> {
+        fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<IVec>, String> {
             match self.db.get(key) {
                 Ok(value) => Ok(value),
                 Err(e) => Err(format!("{:?}", e)),
             }
         }
-        pub(crate) fn delete<T: AsRef<[u8]>>(&self, key: T) -> Result<bool, String> {
+        fn delete<T: AsRef<[u8]>>(&self, key: T) -> Result<bool, String> {
             match self.db.remove(key) {
                 Ok(_) => Ok(true),
                 Err(e) => Err(format!("{:?}", e))
             }
         }
     }
+
+
     #[test]
     fn test1(){
         let a = KvDbOpera::new(initialization("/tmp/welcome-to-sled".to_string()));
@@ -50,8 +61,6 @@ pub mod kv_operation {
         dbg!(&a.get(&"114514"));
     }
 }
-
-
 
 pub mod data_conversion {
     pub fn bitwise_division(dividend: u32, divisor: u32) -> (u32, u32) {
@@ -100,10 +109,11 @@ pub mod data_conversion {
 pub mod list_db {
     use sled::IVec;
     use crate::sdk::db::kv_operation::{initialization, KvDbOpera, KvDbOperaObject};
+    use crate::sdk::db::kv_operation::KvDbOperaTrait;
 
     pub struct ListDb {
         // 数据库列表对象
-        db: KvDbOperaObject,
+        pub(crate) db: KvDbOperaObject,
         pub(crate) name: String,
     }
 
@@ -196,7 +206,7 @@ pub mod list_db {
                 if self.length().unwrap()-1 == index {
                     match self.change_length(index-1) {
                         Ok(_) => {},
-                        Err(e) =>  {dbg!(e);todo!();}
+                        Err(e) =>  {dbg!(e);todo!();} // 没救了
                     }
                 };
             }
@@ -326,6 +336,7 @@ pub mod tuple_list_db {
     }
     #[test]
     fn test(){
+        use crate::sdk::db::kv_operation::KvDbOperaTrait;
         let a = TupleList::new(
             KvDbOperaObject::new(initialization("/tmp/welcome-to-sled".to_string())), "156745qxxs23".to_string(), 2).unwrap();
         dbg!(a.length().unwrap());
@@ -347,6 +358,7 @@ pub mod hashtable_sled_db {
     // 储存键列表 + 基于sled的哈希表
     use crate::sdk::db::kv_operation::{initialization, KvDbOperaObject};
     use crate::sdk::db::list_db::ListDb;
+    use crate::sdk::db::kv_operation::KvDbOperaTrait;
 
     struct OriginalHashtable { // 原始hash表,只有键值对
         db : KvDbOperaObject,
@@ -545,7 +557,6 @@ pub mod hashtable_zipper_db {
                     return ret
                 }
             }
-
             ret
         }
 
@@ -561,6 +572,7 @@ pub mod hashtable_zipper_db {
 
     #[test]
     fn test_hashtable(){
+        use crate::sdk::db::kv_operation::KvDbOperaTrait;
         let a = Hashtable::new(KvDbOperaObject::new(initialization("/tmp/welcome-to-sled".to_string())),"1]&_+3)_~*-1)4".to_string());
         dbg!(&a.insert(&"lst".to_string(), vec![1, 5, 2]));
         dbg!(&a.get(&"lst".to_string()));
