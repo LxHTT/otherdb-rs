@@ -4,13 +4,13 @@ import other_dbpy
 t2 = time.time()
 print("导包耗时:",t2-t1)
 
-db = other_dbpy.open_db(r"D:\tmp\welcome-to-sled").clone()
+db = other_dbpy.open_db(r"D:\tmp\welcome-to-sled").clone() # db 对象支持 clone self
 
 data = other_dbpy.Hashtable(db, "用户名索引")
 pwd = other_dbpy.List(db, "密码")
 
 user_name = "xingzhi"
-user_pwd = b"aaa"
+user_pwd = b"aaa" # 支持写入 bytes 数据类型
 
 t1 = time.time()
 data.insert(user_name, str(pwd.len()).encode())
