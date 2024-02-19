@@ -213,7 +213,21 @@ pub mod list_db {
             }
 
         }
+        pub(crate) fn safety_overwrite(&self, index: usize, value: &Vec<u8>) -> Result<bool,String> {
+            // 带有边界检查的覆写
+            if self.length().unwrap() != 0{
+                if self.length().unwrap()-1 < index {
+                    self.change_length(index+1).unwrap();
+                    self.overwrite(index, value)
+                } else {
+                    self.overwrite(index, value)
+                }
+            } else {
+                self.change_length(index+1).unwrap();
+                self.overwrite(index, value)
+            }
 
+        }
         pub(crate) fn delete(&self, index: usize) -> Result<bool,String> {
             if index != 0 {
                 if self.length().unwrap()-1 == index {
@@ -333,6 +347,32 @@ pub mod tuple_list_db {
             }
             Ok(true)
         }
+        pub(crate) fn safety_overwrite(&self, index: usize, value: &Vec<&Vec<u8>>) -> Result<bool, String> {
+            if value.len() != (self.len as usize)  { return Err("Value length error".to_string()) } // 输入长度错误
+            for i in  0..value.len(){
+                match self.list.safety_overwrite(index*(self.len as usize)+i, value[i]) { // 覆写原始数据
+                    Ok(_) => {  },
+                    Err(e) => {
+                        for j in (index*(self.len as usize))..(index*(self.len as usize))+i{ // 收拾残局(注意当前覆写的残局已被 self.List.overwrite 收拾干净了,所以不需要再收拾一遍了)
+                            let _ = &self.list.delete(j);
+                        }return Err(e); // 输出错误
+                    }
+                }
+            }
+            Ok(true)
+        }
+        pub(crate) fn safety_overwrite_tuple_elements(&self, index: usize,tuple_index:u16,value : &Vec<u8>) -> Result<bool, String> {
+            // 列表index和列表index对应的元组index
+            // 覆写列表中的元组中的某个元素的值
+            if tuple_index > self.len { return Err("Value length error".to_string()) } // 输入长度错误
+            match self.list.safety_overwrite(self.get_list_index(index,tuple_index), value) { // 覆写原始数据
+                Ok(_) => { Ok(true) },
+                Err(e) => {
+                        let _ = self.delete_tuple_elements(index,tuple_index).unwrap(); // 收拾残局,失败即报错
+                        return Err(e); // 输出错误
+                }
+            }
+        }
 
         pub(crate) fn overwrite_tuple_elements(&self, index: usize,tuple_index:u16,value : &Vec<u8>) -> Result<bool, String> {
             // 列表index和列表index对应的元组index
@@ -341,8 +381,8 @@ pub mod tuple_list_db {
             match self.list.overwrite(self.get_list_index(index,tuple_index), value) { // 覆写原始数据
                 Ok(_) => { Ok(true) },
                 Err(e) => {
-                        let _ = self.delete_tuple_elements(index,tuple_index).unwrap(); // 收拾残局,失败即报错
-                        return Err(e); // 输出错误
+                    let _ = self.delete_tuple_elements(index,tuple_index).unwrap(); // 收拾残局,失败即报错
+                    return Err(e); // 输出错误
                 }
             }
         }

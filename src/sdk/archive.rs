@@ -32,7 +32,7 @@ pub type IVE = IndexVecElement;
 type UuidIndex = String; // 这里使用uuid创建中间索引
 pub type EAR = ElementAnalysisResults;
 
-pub fn option_vec_to_string(vec: Option<Vec<u8>>) -> String {
+fn option_vec_to_string(vec: Option<Vec<u8>>) -> String {
     String::from_utf8(vec.unwrap()).unwrap()
 }
 
@@ -80,12 +80,12 @@ impl EAR {
             },
             AE::List(obj) => {
                 Some(if let IVE::List(index) = self.1.clone() {
-                    return obj.overwrite(index,data)
+                    return obj.safety_overwrite(index,data)
                 })
             }
             AE::TupleList(obj) => {
                 Some(if let IVE::TupleList(index,tindex,_) = self.1.clone() {
-                    return obj.overwrite_tuple_elements(index,tindex,data)
+                    return obj.safety_overwrite_tuple_elements(index,tindex,data)
                 })
             }
         };
@@ -194,8 +194,7 @@ impl Archive {
             },
             IVE::List(index) => {
                 let list = ListDb::new(self.db.clone(), previous_parsing_result_data.unwrap()).unwrap();
-                list.change_length(index+1).unwrap();
-                list.overwrite(index,&uuid.clone().as_bytes().to_vec())
+                list.safety_overwrite(index,&uuid.clone().as_bytes().to_vec())
             },
             IVE::TupleList(index,tuple_index,len) => {
                 TupleList::new(self.db.clone(), previous_parsing_result_data.unwrap(), len).unwrap().overwrite_tuple_elements(index, tuple_index, &uuid.as_bytes().to_vec())
