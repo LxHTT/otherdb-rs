@@ -27,13 +27,19 @@ fn open_db(path:String) -> PyKvDbOperaObject{
 struct PyKvDbOperaObject{
     db : kv_operation::KvDbOperaObject
 }
+#[pymethods]
+impl PyKvDbOperaObject {
+    fn clone(&self) -> Self {
+        // 在python克隆自己,我是线程安全的
+        self.clone()
+    }
+}
+
 
 #[pyclass]
 struct List {
     list_db_obj :ListDb
 }
-
-
 
 #[pymethods]
 impl List {
@@ -41,8 +47,13 @@ impl List {
     fn new(db:PyKvDbOperaObject,name:String) -> Self {
         List{ list_db_obj: ListDb::new(db.db.clone(),name).unwrap() }
     }
+
+    // fn open(db:PyKvDbOperaObject,name:String) -> Self {
+    //     List{ list_db_obj: ListDb::open(db.db.clone(),name).unwrap() }
+    // }
+
     fn append(&self,value:Vec<u8>) -> bool {
-        match self.list_db_obj.append(value) {
+        match self.list_db_obj.append(&value) {
             Ok(_) => true,
             Err(_) => false,
         }
@@ -54,7 +65,7 @@ impl List {
         }
     }
     fn overwrite(&self,index:usize,value:Vec<u8>) -> bool {
-        match self.list_db_obj.overwrite(index,value) {
+        match self.list_db_obj.overwrite(index,&value) {
             Ok(_) => true,
             Err(_) => false,
         }
@@ -81,8 +92,13 @@ impl Hashtable {
     fn new(db:PyKvDbOperaObject,name:String) -> Self {
         Hashtable { hashtable : HashtableDb::new(db.db,name) }
     }
+
+    // fn open(db:PyKvDbOperaObject,name:String) -> Self {
+    //     Hashtable { hashtable : HashtableDb::open(db.db,name) }
+    // }
+
     fn insert(&self,key:String,value:Vec<u8>) -> bool {
-        match self.hashtable.insert(&key, value) {
+        match self.hashtable.insert(&key, &value) {
             Ok(_) => true,
             Err(_) => false,
         }
@@ -100,3 +116,5 @@ impl Hashtable {
         self.hashtable.to_tuple_list(number_of_entries)
     }
 }
+
+

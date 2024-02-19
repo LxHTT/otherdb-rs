@@ -11,6 +11,7 @@ pub mod kv_operation {
     }
 
     #[derive(Clone)]
+    #[derive(Debug)]
     pub struct KvDbOpera {
         // 键值对操作对象
         db : Db
@@ -27,7 +28,7 @@ pub mod kv_operation {
     }
 
     impl KvDbOperaTrait for KvDbOpera {
-        type Output = (Self);
+        type Output = Self;
         fn new(db: Db) -> <KvDbOpera as KvDbOperaTrait>::Output {
             KvDbOpera { db }
         }
@@ -50,7 +51,6 @@ pub mod kv_operation {
             }
         }
     }
-
 
     #[test]
     fn test1(){
@@ -111,6 +111,8 @@ pub mod list_db {
     use crate::sdk::db::kv_operation::{initialization, KvDbOpera, KvDbOperaObject};
     use crate::sdk::db::kv_operation::KvDbOperaTrait;
 
+    #[derive(Debug)]
+    #[derive(Clone)]
     pub struct ListDb {
         // 数据库列表对象
         pub(crate) db: KvDbOperaObject,
@@ -128,7 +130,7 @@ pub mod list_db {
                 Ok(v) => match v {
                     None => None,
                     Some(v1) => {
-                        Some(crate::sdk::string_to_usize(crate::sdk::db::ivec_to_string(v1)))
+                        Some(crate::sdk::string_to_usize(String::from_utf8(v1.to_vec()).unwrap()))
                     }
                 },
                 _ => None,
@@ -149,9 +151,10 @@ pub mod list_db {
 
     impl ListDb {
         pub(crate) fn new(db:KvDbOperaObject, name: String) -> Result<Self,String> {
+            // 创建一个新的对象
             let key = format!("List:{name}");
-            match db.get(&key).expect("Data acquisition failed") {
-                Some(_) => Ok(ListDb {db,name}), // 列表已存在,则不创建,直接返回
+            match Self::open(db.clone(),name.clone()) {
+                Some(t) => Ok(t), // 列表已存在,则不创建,直接返回
                 None => {
                     match db.insert(&key,&*(0.to_string())) {
                         Ok(_) => Ok(ListDb {db,name}), // 返回正确的对象
@@ -163,7 +166,17 @@ pub mod list_db {
                 }
             }
         }
-        pub(crate) fn append(&self, value: Vec<u8>) -> Result<bool,String> {
+
+        pub(crate) fn open(db:KvDbOperaObject, name: String) -> Option<Self> {
+            // 打开一个哈希表
+            let key = format!("List:{name}");
+            match db.get(&key).expect("Data acquisition failed") {
+                Some(_) => Some(ListDb {db,name}), // 列表已存在,直接返回
+                None => None
+            }
+        }
+
+        pub(crate) fn append(&self, value: &Vec<u8>) -> Result<bool,String> {
             // 追加
             let index = match self.length() { // 获取原来列表长度
                 None => { return Err("Failed to obtain List length".to_string()) }
@@ -185,10 +198,10 @@ pub mod list_db {
             }
         }
 
-        pub(crate) fn overwrite(&self, index: usize, value: Vec<u8>) -> Result<bool,String> {
+        pub(crate) fn overwrite(&self, index: usize, value: &Vec<u8>) -> Result<bool,String> {
             // 覆写数据
             if self.length().unwrap() >= index + 1 { // 检查index是否超过列表长度
-                match self.db.insert(self.get_key(index), IVec::from(value)) { // 调用数据库执行写入
+                match self.db.insert(self.get_key(index), IVec::from(value.clone())) { // 调用数据库执行写入
                     Ok(_) => Ok(true),
                     Err(e) => match self.delete(index) { // 覆写失败,收拾残局
                         Ok(_) => Err(e),
@@ -228,7 +241,7 @@ pub mod list_db {
     // }
     #[test]
     fn list_test_string(){
-        let a = ListDb::new(
+        let a = ListDb::open(
             KvDbOpera::new(initialization("/tmp/welcome-to-sled".to_string())),
             "113314".to_string()
         ).expect("");
@@ -249,7 +262,7 @@ pub mod list_db {
             println!("{:?}",a.delete(i))
         }
         a.change_length(0+1).unwrap();
-        a.overwrite(0,vec![1]).unwrap();
+        a.overwrite(0,&vec![1]).unwrap();
         dbg!(a.access(0)) ;
     }
 }
@@ -258,6 +271,8 @@ pub mod tuple_list_db {
     use crate::sdk::db::list_db as list;
     use crate::sdk::db::kv_operation::{initialization, KvDbOperaObject};
 
+    #[derive(Debug)]
+    #[derive(Clone)]
     pub struct TupleList {
         list : list::ListDb,
         name : String,
@@ -269,13 +284,22 @@ pub mod tuple_list_db {
         // 也就是类似于: 元组列表([(1,2),(3,4)]),实际列表([1,2,3,4])
         // 因此元组列表的实际列表的长度有 2*元组列表长度 的关系
         pub(crate) fn new(db: KvDbOperaObject, name: String, len: u16) -> Result<Self, String> {
-            match list::ListDb::new(db,format!("Tuple:{name}")) { // 构建列表
+            // 创建一个元组列表对象
+            match list::ListDb::new(db,format!("Tuple:{name}")) { // 构建列表对象
                 Ok(list) => Ok(TupleList { list,name, len}),
                 Err(e) => Err(format!("Failed to create List : {e}")),
             }
         }
 
-        pub(crate) fn append(&self, value: &Vec<Vec<u8>>) -> Result<bool, String> {
+        pub(crate) fn open(db: KvDbOperaObject, name: String, len: u16) -> Option<Self> {
+            // 打开一个元组列表,并且创建对象
+            match list::ListDb::open(db,format!("Tuple:{name}")) {
+                Some(list) => Some(TupleList { list,name, len}),
+                _ => None,
+            }
+        }
+
+        pub(crate) fn append(&self, value: &Vec<&Vec<u8>>) -> Result<bool, String> {
             // 追加元组元素
             self.list.change_length(self.list.length().unwrap() + value.len()).unwrap();
             self.overwrite(self.length().unwrap()-1,value)
@@ -294,11 +318,11 @@ pub mod tuple_list_db {
             }
         }
 
-        pub(crate) fn overwrite(&self, index: usize, value: &Vec<Vec<u8>>) -> Result<bool, String> {
+        pub(crate) fn overwrite(&self, index: usize, value: &Vec<&Vec<u8>>) -> Result<bool, String> {
             // 覆写元组
             if value.len() != (self.len as usize)  { return Err("Value length error".to_string()) } // 输入长度错误
             for i in  0..value.len(){
-                match self.list.overwrite(index*(self.len as usize)+i, value[i].clone()) { // 覆写原始数据
+                match self.list.overwrite(index*(self.len as usize)+i, value[i]) { // 覆写原始数据
                     Ok(_) => {  },
                     Err(e) => {
                         for j in (index*(self.len as usize))..(index*(self.len as usize))+i{ // 收拾残局(注意当前覆写的残局已被 self.List.overwrite 收拾干净了,所以不需要再收拾一遍了)
@@ -310,7 +334,36 @@ pub mod tuple_list_db {
             Ok(true)
         }
 
+        pub(crate) fn overwrite_tuple_elements(&self, index: usize,tuple_index:u16,value : &Vec<u8>) -> Result<bool, String> {
+            // 列表index和列表index对应的元组index
+            // 覆写列表中的元组中的某个元素的值
+            if tuple_index > self.len { return Err("Value length error".to_string()) } // 输入长度错误
+            match self.list.overwrite(self.get_list_index(index,tuple_index), value) { // 覆写原始数据
+                Ok(_) => { Ok(true) },
+                Err(e) => {
+                        let _ = self.delete_tuple_elements(index,tuple_index).unwrap(); // 收拾残局,失败即报错
+                        return Err(e); // 输出错误
+                }
+            }
+        }
+
+        pub(crate) fn access_tuple_elements(&self, index: usize,tuple_index:u16) -> Option<Vec<u8>> {
+            self.list.access(self.get_list_index(index,tuple_index))
+        }
+
+        pub(crate) fn delete_tuple_elements(&self, index: usize,tuple_index:u16) -> Result<bool, String> {
+            // 列表index和列表index对应的元组index
+            // 删除列表中的元组中的某个元素的值
+            self.list.delete(self.get_list_index(index,tuple_index))
+        }
+
+        fn get_list_index(&self, index: usize,tuple_index:u16) -> usize {
+            // 列表index和列表index对应的元组index
+            index*(self.len as usize)+(tuple_index as usize)
+        }
+
         pub(crate) fn delete(&self, index: usize){
+            // 删除列表中的某个元组
             for j in (index*(self.len as usize))..(index*(self.len as usize))+(self.len as usize) { // 收拾残局(注意当前覆写的残局已被 self.List.overwrite 收拾干净了,所以不需要再收拾一遍了)
                 let _ = &self.list.delete(j);
             }
@@ -337,17 +390,17 @@ pub mod tuple_list_db {
     #[test]
     fn test(){
         use crate::sdk::db::kv_operation::KvDbOperaTrait;
-        let a = TupleList::new(
+        let a = TupleList::open( // 如果这个元组列表不存在,需要先 new
             KvDbOperaObject::new(initialization("/tmp/welcome-to-sled".to_string())), "156745qxxs23".to_string(), 2).unwrap();
         dbg!(a.length().unwrap());
-        dbg!(&a.append(&vec!["I love".to_string().as_bytes().to_vec(), "XXXXXXXXXXXX".to_string().as_bytes().to_vec()]));
+        dbg!(&a.append(&vec![&"I love".to_string().as_bytes().to_vec(), &"XXXXXXXXXXXX".to_string().as_bytes().to_vec()]));
         dbg!(a.length().unwrap());
         dbg!(&a.access(a.length().unwrap()-1));
         dbg!(&a.delete(a.length().unwrap()-1));
         dbg!(a.length().unwrap());
         dbg!(&a.access(a.length().unwrap()));
-        dbg!(&a.append(&vec!["I love".to_string().as_bytes().to_vec(), "She".to_string().as_bytes().to_vec()]));
-        dbg!(&a.overwrite(0,&vec!["I love".to_string().as_bytes().to_vec(), "He".to_string().as_bytes().to_vec()]));
+        dbg!(&a.append(&vec![&"I love".to_string().as_bytes().to_vec(), &"She".to_string().as_bytes().to_vec()]));
+        dbg!(&a.overwrite(0,&vec![&"I love".to_string().as_bytes().to_vec(),& "He".to_string().as_bytes().to_vec()]));
         dbg!(&a.access(a.length().unwrap()-1));
         dbg!(&a.delete(a.length().unwrap()-1));
         dbg!(a.length().unwrap());
@@ -447,6 +500,8 @@ pub mod hashtable_zipper_db {
     use std::collections::hash_map::DefaultHasher;
     use crate::sdk::db::tuple_list_db::TupleList;
 
+    #[derive(Debug)]
+    #[derive(Clone)]
     pub struct Hashtable {
         db : KvDbOperaObject,
         hashlist : ListDb,
@@ -456,7 +511,12 @@ pub mod hashtable_zipper_db {
         pub fn new(db:KvDbOperaObject,name:String) -> Self {
             Hashtable { db: db.clone() , hashlist : ListDb::new(db.clone(),format!("HashtableHashlist:{name}")).unwrap() } // 创建list对象
         }
-        pub fn insert(&self,key:&String,value:Vec<u8>) -> Result<bool,String> {
+
+        pub fn open(db:KvDbOperaObject,name:String) -> Self {
+            Hashtable { db: db.clone() , hashlist : ListDb::open(db.clone(),format!("HashtableHashlist:{name}")).unwrap() } // 创建list对象
+        }
+
+        pub fn insert(&self,key:&String,value:&Vec<u8>) -> Result<bool,String> {
             let hash_value = self.get_hash(key);
             return match self.hashlist.access(hash_value) {
                 Some(lzip_name) => { // 此情况为hash碰撞的情况
@@ -464,19 +524,19 @@ pub mod hashtable_zipper_db {
                     // 此元组列表为 [(key,value)]
                     for i in 0..lzip.length().unwrap() {
                         if &String::from_utf8(lzip.access(i).unwrap()[0].clone().unwrap()).unwrap() == key {
-                            return lzip.overwrite(i, &vec![key.as_bytes().to_vec(), value])
+                            return lzip.overwrite(i, &vec![&key.as_bytes().to_vec(), value])
                         }
                     } // 判断有没有已经存在的键,如果存在,就直接改
-                    lzip.append(&vec![key.as_bytes().to_vec(), value]) // 如果不存在,直接追加
+                    lzip.append(&vec![&key.as_bytes().to_vec(), value]) // 如果不存在,直接追加
                 }
                 None => { // 没有碰撞
                     if (hash_value + 1) > self.hashlist.length().unwrap() { // 当前键大于列表长度
                         self.hashlist.change_length(hash_value + 1).unwrap(); // 更改列表长度,以用于下面的覆写
                     }
-                    self.hashlist.overwrite(hash_value, key.as_bytes().to_vec()).unwrap(); // 覆写为lzip的名字
+                    self.hashlist.overwrite(hash_value, &key.as_bytes().to_vec()).unwrap(); // 覆写为lzip的名字
 
                     let lzip = self.new_lzip(key.as_bytes().to_vec());
-                    lzip.append(&vec![key.as_bytes().to_vec(), value]) // 追加以完成写入
+                    lzip.append(&vec![&key.as_bytes().to_vec(), value]) // 追加以完成写入
                 }
             };
         }
@@ -573,10 +633,10 @@ pub mod hashtable_zipper_db {
     #[test]
     fn test_hashtable(){
         use crate::sdk::db::kv_operation::KvDbOperaTrait;
-        let a = Hashtable::new(KvDbOperaObject::new(initialization("/tmp/welcome-to-sled".to_string())),"1]&_+3)_~*-1)4".to_string());
-        dbg!(&a.insert(&"lst".to_string(), vec![1, 5, 2]));
+        let a = Hashtable::open(KvDbOperaObject::new(initialization("/tmp/welcome-to-sled".to_string())),"1]&_+3)_~*-1)4".to_string());
+        dbg!(&a.insert(&"lst".to_string(), &vec![1, 5, 2]));
         dbg!(&a.get(&"lst".to_string()));
-        dbg!(&a.insert(&"I li".to_string(), vec![1, 1, 4, 5, 1, 4]));
+        dbg!(&a.insert(&"I li".to_string(), &vec![1, 1, 4, 5, 1, 4]));
 
         dbg!(&a.to_tuple_list(Some(10usize)));
         dbg!(&a.delete(&"lst".to_string()));
