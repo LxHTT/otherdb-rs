@@ -113,6 +113,10 @@ impl EAR {
         };
         Err("Incorrect ElementAnalysisResults (EAR) object format".to_string())
     }
+    pub fn to_ive(&self) -> IVE {
+        // 转化为IVE
+        return self.1.clone()
+    }
 }
 
 impl Archive {
