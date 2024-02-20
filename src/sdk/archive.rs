@@ -49,10 +49,10 @@ impl EAR {
     }
     pub fn access(&self) -> Option<Vec<u8>> {
         // 访问 EAR 指定的内容
-        match self.0.clone() {
+        match self.0.clone() { // 因为EAR包含多种类型,所以需要使用match语句来规定所有类型的处理方法
             AE::HeadMarking => { None },
             AE::Hashtable(obj) => {
-                Some(if let IVE::Hashtable(key) = self.1.clone() {
+                Some(if let IVE::Hashtable(key) = self.1.clone() { // 只处理 IVE::Hashtable 类型,其他一律报错
                     return obj.get(&key)
                 })
             },
